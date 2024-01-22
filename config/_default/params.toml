@@ -19,7 +19,7 @@ disableImageZoom = false
 disableImageOptimization = true
 disableTextInHeader = true
 
-defaultBackgroundImage = "img/feature.jpg" # used as default for background images 
+# defaultBackgroundImage = "IMAGE.jpg" # used as default for background images 
 defaultFeaturedImage = "img/feature.jpg" # used as default for featured images in all articles
 
 highlightCurrentMenuArea = false

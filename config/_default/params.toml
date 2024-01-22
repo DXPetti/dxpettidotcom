@@ -13,7 +13,7 @@ enableSearch = true
 enableCodeCopy = true
 
 # mainSections = ["section1", "section2"]
-# robots = ""
+robots = "all"
 
 disableImageZoom = false
 disableImageOptimization = true

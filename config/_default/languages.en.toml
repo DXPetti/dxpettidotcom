@@ -10,7 +10,7 @@ title = "DXPetti.com"
   dateFormat = "2 January 2006"
   logo = "img/logo.png"
   # secondaryLogo = "img/secondary-logo.png"
-  # description = "I'm here to help"
+  description = "I'm here to help"
   # copyright = "Copy, _right?_ :thinking_face:"
 
 [author]

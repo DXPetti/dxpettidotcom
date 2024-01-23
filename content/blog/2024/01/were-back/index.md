@@ -5,8 +5,9 @@ categories:
   - "random-blogging"
   - "tech"
 tags:
-  - "random-blogging"
   - "technology"
+  - "hugo"
+  - "wordpress"
 coverImage: "wereback_cover.jpg"
 ---
 

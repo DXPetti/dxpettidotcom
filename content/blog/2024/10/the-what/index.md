@@ -46,9 +46,11 @@ So what is the workflow for someone using Wordpress? Regardless of if the above 
 {{< mermaid >}}
 flowchart TD
 B("Browser") -- authenticate --> W("Wordpress")
-W --> C("Create content")
+subgraph W [Wordpress]
+C("Create content")
 C --> P("Publish content")
 C --> S("Schedule content") -- schedule met --> P
+end
 {{< /mermaid >}}
 
 As one could surmise, Wordpress keeps things very simple and easy for authors. One of the primarly reasons for it's ubiquitousness. 
@@ -78,7 +80,9 @@ flowchart TD
 T("Text editor") --> C("Create content")
 C --> PL("Publish locally")
 C -- version control--> PR("Publish remotely")
+subgraph H [Hugo]
 PL -- ftp rsync--> PR
+end
 {{< /mermaid >}}
 
 Hugo, as you can see, decouples the creation of content from the publishing of content. This means you can use whatever toolset you are most comfortable with rather than be constrained by the vendor.

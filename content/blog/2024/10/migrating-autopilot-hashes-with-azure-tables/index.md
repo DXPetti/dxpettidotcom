@@ -1,6 +1,6 @@
 ---
 title: "Migrating Autopilot Hashes With Azure Tables"
-date: "2024-10-08T11:45:27+11:00"
+date: "2024-10-15T00:00:00+11:00"
 categories: 
   - "system-administration"
   - "tech"
@@ -10,13 +10,11 @@ tags:
   - "azure"
   - "intune"
   - "powershell"
+  - "bicep"
   - "autopilot"
-  - "tables"
-coverImage:
-draft: true
+  - "azure tables"
+coverImage: "autopilot_cover.jpg"
 ---
-
-## The problem
 
 As part of a project to consolidate 3 organizations into 1 new organization, we decided as part of the IT consolidation, end user would go through a reset and re-register process to migrate their device from either BYOD or old environment corporate (Intune) managed to new environment corporate (Intune) managed. This process would occur over a short window of time (such as a weekend) for all users.
 
@@ -34,7 +32,9 @@ So we know how to output what we need and what are the import requirements, know
 
 ## Solutioning time
 
-Since we are already dealing with PowerShell and data structured in table form, sounds like the perfect excuse to use Azure Tables! From a 10,000ft view, we need to build something that will look like the following:
+Since we are already dealing with PowerShell and data structured in table form, sounds like the perfect excuse to use Azure Tables! 
+
+From a 10,000ft view, we need to build something that will look like the following:
 
 <div style="background-color:white; padding: 20px">
 {{< mermaid >}}
@@ -55,7 +55,7 @@ end
 
 ## Build some infra
 
-Okay, we have declared that Azure Tables shall provide the central storage of our device hashes for import into a new organisations Intune. Let's quickly build a Storage Account  associated Table and output a service level SAS key to be used by our device-level PowerShell to send up the device hash by flexing our Bicep skills.
+Okay, we have declared that Azure Tables shall provide the central storage of our device hashes for import into the new organisations Intune. Let's quickly build a Storage Account, associated Table Service, Table and output a service level SAS key to be used by our device-level PowerShell to send up the device hash. We can do this by flexing some Bicep skills.
 
 Save the below as a ```.bicep``` file.
 
@@ -65,9 +65,10 @@ Save the below as a ```.bicep``` file.
 @description('Specifies the name of the Azure Storage account.')
 param storageAccountName string = 'autopilot${uniqueString(resourceGroup().id, deployment().name)}'
 
-@description('Specifies the name of the blob container.')
+@description('Specifies the name of the Azure Table.')
 param tableName string = 'autopilotinfo'
 
+@description('Specifies the expiry of the service level SAS key.')
 param tableSasExpiry string = '2025-01-01T00:00:00Z'
 
 @description('Specifies the location in which the Azure Storage resources should be deployed.')
@@ -106,13 +107,13 @@ var sasConfig = {
 output sasToken string = sa.listServiceSas(sa.apiVersion, sasConfig).serviceSasToken
 ```
 
-Create the necessary resouce group, for example
+To kick off the deployment, create the necessary resouce group; for example:
 
 ```bash
 az group create --name Autopilot-RG --location "Australia East"
 ```
 
-Now let's deploy our bicep file (in this example, the above bicep was saved as *deployaztable.bicep*)
+Now let's deploy our bicep file (in this example, the above bicep was saved as *deployaztable.bicep*):
 
 ```bash
 az deployment group create \
@@ -121,7 +122,7 @@ az deployment group create \
   --template-file deployaztable.bicep \
   --output none
 ```
-and note in the outputs section our service-level SAS key to hit the table with later.
+and note, when successfully deployed, in the outputs section, our service-level SAS key is displayed to access the table with later.
 
 ```json
     "outputs": {
@@ -137,3 +138,90 @@ The output gets a bit messed up, specifically, any time codes within the SAS key
 {{< /alert >}}
 
 ## Extract the hash
+
+With our central storage for the device hashes sorted, now we need to piece together something that will extract said device hashes and upload to the Azure Table, and do so in a scalable way.
+
+We already have the extraction method sorted with the provided ```Get-WindowsAutopilotInfo.ps1``` PowerShell script, so let's dig into the script and extend upon it.
+
+Fortunately, the script has a great level of detail, including examples built in. A quick glean of this shows that, without any paramaters defined, the script will extract the necessary information via WMI from the local host and output back to the Shell as a object:
+
+```powershell
+# Create a pipeline object
+$c = New-Object psobject -Property @{
+    "Device Serial Number" = $serial
+    "Windows Product ID" = $product
+    "Hardware Hash" = $hash
+}
+```
+
+Perfect, this means we can easily manipulate with PowerShell to do what we need.
+
+Now we just need to take this outputted object and send it to the Azure Table. Enter [AzTable](https://www.powershellgallery.com/packages/AzTable/) module.
+
+Now, this module is a bit of a weird one. It's somewhat official (copyright is Microsoft Corp) but the PowerShell Gallery specifically references a personal website that no longer works...
+
+Never fear, as [Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/tables/table-storage-how-to-use-powershell) has some example on how to use the module. But if your experience is anything like mine, you'll quickly find out the method described to authenticate and retrieve a table doesn't work.
+
+Most likely, this is centered around that tables use a authentication abstraction referenced as *Context*. The documentation retrieves this context during the creation of a example storage account that the table lives in.
+
+The documentation does not provide any steps of getting this context for existing tables.
+
+Yikes
+
+Fortunately, the internet take away but also giveth. Microsoft MVP Travis Roberts provides a [great example(https://www.ciraltos.com/write-data-from-powershell-to-azure-table-storage/)] of how to connect to existing Storage Accounts and Tables within via the creation of the context object:
+
+```powershell
+# Step 2, Connect to Azure Table Storage
+$storageCtx = New-AzureStorageContext -StorageAccountName $storageAccountName -SasToken $sasToken
+$table = Get-AzureStorageTable -Name $tableName -Context $storageCtx
+```
+
+With authentication sorted, now we just need to write our table data. For that, we need 4 key elements:
+
+- ```table```
+  - This is our Azure Table. Already retrieved as part of our context building earlier
+- ```partitionKey```
+  - Partition Keys enable us to separate data into several, you guessed it, partitions. This is not needed in our case so our key will all be the same
+- ```rowKey```
+  - Row Keys are a unique identifier for each table data entry. ```New-Guid``` will be handy here
+- ```property```
+  - This is our meat and potatoes, our Autopilot data including the hash will go here. This is in a format of hashtable.
+
+With this knowledge, we can place these puzzle pieces together into a single PowerShell script that will install our dependencies needed for each script/module to work, connect to our table, retrieve the Autpilot hash and take that output and enter as a new row to our table. Without further ado, LFG:
+
+
+{{< gist DXPetti 860f96d67097b3d23d434fd8ab24f0d0 >}}
+
+Two things to call our in the script.
+
+1. Azure Tables don't enjoy spaces in their column headers. This is why, when writing to the table row, we are not using the the names defined in the object as outputted from ```Get-WindowsAutopilotInfo.ps1```:
+
+```powershell
+-property @{"DeviceName"="$($env:COMPUTERNAME)";"SerialNumber"="$(($Autopilot).'Device Serial Number')";"Hash"="$(($Autopilot).'Hardware Hash')"}
+```
+
+2. Jumping a head a bit but we will deploy this script at scale with Intune as a Win32 package and thus, to help detect it's successful execution, we are writing a value to the registry to check against:
+
+```powershell
+# Set detection key to indicate script has run
+New-Item -Path 'HKLM:\SOFTWARE\AutoPilotCollection' -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\AutoPilotCollection" -Name "AutoPilotInfoCaptured" -Value 1 -PropertyType DWORD -Force
+```
+
+## Auto(pilot)bots, roll out!
+
+We have the infrastructure, we have the method to get our outputs, inputted, now lets deploy this thing at scale.
+
+I won't go in depth on packaging PowerShell scripts as Win32 applications in Intune, but to summarise:
+
+1. Install and wrap the PowerShell script with the [Win32 Content Prep Tool](https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool)
+2. Set your **Install command** to ```powershell.exe -ExecutionPolicy Bypass -File .\Get-AutoPilotInfoAndSend.ps1```
+3. Remember that the Intune agent runs as x86 application and therefore, our detection should look like the following:
+![](images/detection.jpg)
+If we don't set the last option to Yes, Intune will look for the registry key in the wrong place (it lands in WOW6432Node key).
+
+That's it.
+
+All that's left is to extract the data from the Azure Table (*I suggest using [Azure Storage Explorer](https://github.com/microsoft/AzureStorageExplorer)*) to a CSV and upload into Intune.
+
+It was quite a entertaining challenge to put this together to bridge the (intentional) gap left by Microsoft. I hope this may help others who face a similar challenge or just want to get started interacting with Azure Tables via PowerShell.

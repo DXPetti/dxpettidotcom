@@ -16,3 +16,17 @@ tags:
 coverImage:
 draft: true
 ---
+
+## Dollarydoos
+
+## Dat code lyfe
+
+## Performance
+
+![](images/lighthouse_old.png)
+![](images/lighthouse_new
+.png)
+
+## More cloud
+
+## Bonus Round: Wordpress ick

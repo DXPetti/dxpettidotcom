@@ -168,7 +168,7 @@ The documentation does not provide any steps of getting this context for existin
 
 Yikes
 
-Fortunately, the internet take away but also giveth. Microsoft MVP Travis Roberts provides a [great example(https://www.ciraltos.com/write-data-from-powershell-to-azure-table-storage/)] of how to connect to existing Storage Accounts and Tables within via the creation of the context object:
+Fortunately, the internet take away but also giveth. Microsoft MVP Travis Roberts provides a [great example](https://www.ciraltos.com/write-data-from-powershell-to-azure-table-storage/) of how to connect to existing Storage Accounts and Tables within via the creation of the context object:
 
 ```powershell
 # Step 2, Connect to Azure Table Storage
